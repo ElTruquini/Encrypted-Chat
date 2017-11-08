@@ -1,16 +1,30 @@
 import java.io.*;
 import java.net.*;
 import java.util.*;
+import javax.net.ssl.*;
+import com.sun.net.ssl.*;
+import java.math.BigInteger;
 import java.security.*;
+import java.security.Security;
+import java.security.cert.Certificate;
+import java.security.cert.X509Certificate;
+import com.sun.net.ssl.internal.ssl.Provider;
+import javax.net.ssl.SSLSession;
+import javax.net.ssl.SSLSocket;
+import javax.net.ssl.SSLSocketFactory;
 
 
 public class Client implements Runnable {
 
 	private String settings; //chatAt(0) = encr, (1) = integrity, (2) = authentication
-	BufferedReader br1, br2;
-	PrintWriter pr1;
-	Socket socket;
-	Thread t1, t2;
+	BufferedReader console, dataIn;
+	PrintWriter dataOut;
+	Thread receiving, sending;
+	boolean authentFlag, 
+		integFlag,
+		encrypFlag,
+		validConnection;
+	
 	String in = "", out = "";
 
 	private static String chatSettings(Scanner in){
@@ -44,10 +58,6 @@ public class Client implements Runnable {
 		return settings;
 	}
 
-
-
-
-
 	//Converts a byte array into a string in hex representation.
 	public static String bytesToHex (byte[] bytes){
 		StringBuilder builder = new StringBuilder();
@@ -68,92 +78,223 @@ public class Client implements Runnable {
 		 // System.out.println("hex digest: "+ bytesToHex(digest));
 
 		return digest;
-
 	}
 
-	private static void authenticate(Scanner scanner, PrintWriter pr1, BufferedReader br2){
+	private static boolean sendPass(Scanner scanner, PrintWriter dataOut, BufferedReader dataIn){
 		System.out.println("LOGIN: Please enter your username:");
 		String userName = scanner.nextLine();
-		pr1.println(userName);
+        System.out.println("userName: " + userName);
+		dataOut.println(userName);
 		System.out.println("LOGIN: Please enter your password:");
 		String pass = scanner.nextLine();
 		try{
-			pr1.println(bytesToHex(hash(pass)));
-			String access = br2.readLine();
+			dataOut.println(bytesToHex(hash(pass)));
+			String access = dataIn.readLine();
 			if (access.equals("false")){
-				System.out.println();
-				System.out.println("Authentication - Wrong user or password, terminating connection.");
-				System.exit(1);
+				return false;
 			}
-			System.out.println("Authentication - Login validation successful.");
+            return true;
 		}catch(Exception e){
 			e.printStackTrace();
 			System.out.println("Hash - Error while hashing the string");
 		}
-
+        return false;
 	}
 
+	private static boolean validUser(PrintWriter dataOut, BufferedReader dataIn){
+		boolean found = false;
+		String [] utoken = null;
+
+		System.out.println("Client credentials verification completed");
+		System.out.println("Waiting for client credentials...");
+
+		try{
+			String user = dataIn.readLine();
+			String pass = dataIn.readLine();
+
+			System.out.println("Authentication - user: "+ user + " passhash:"+ pass);
+
+
+			File file = new File ("./Clientcred/credentials.txt");
+			Scanner fileScanner = new Scanner (file);
+			while (fileScanner.hasNextLine()){
+				utoken = fileScanner.nextLine().split(" ");
+				if (utoken[0].equals(user)){
+					found = true;
+				}
+				if (found){
+					String preHash = utoken[1] + pass;
+					String postHash = bytesToHex(hash(preHash));
+					if (postHash.equals(utoken[2])){
+						dataOut.println("true");
+						return true;
+					}
+				}
+			}
+
+		}catch (Exception e){
+			e.printStackTrace();
+			System.out.println("Autentication ERROR - Problem hashing password");
+		}
+		dataOut.println("false");
+		return false;
+	}
 
 	public Client() {
-		try {
-			Scanner scanner = new Scanner(System.in);
-			// settings = chatSettings(scanner);
-			settings = "101";
-			System.out.println("Client chat settings: " +settings );
+		Scanner scanner = new Scanner(System.in);
 
-			socket = new Socket("localhost", 5000);
+		while (true){
+			Socket socket;
 
-			br1 = new BufferedReader(new InputStreamReader(System.in));
-			br2 = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-			pr1 = new PrintWriter(socket.getOutputStream(), true);
+			try {
+				System.out.println("\n===========CLIENT INITIALIZED===========");
+				validConnection = true;
+				System.out.println("Connecting to server...");
 
-			//Login process
-			authenticate(scanner, pr1, br2);
-			
-			//Chat settings validation
-			pr1.println(settings);
-			String sett = br2.readLine();
-			if (sett.equals("false")){
-				System.out.println("Settings - Error, different settings selected from Client, terminating program.");
-				System.exit(1);
+				socket = new Socket("localhost", 5000);
+
+				console = new BufferedReader(new InputStreamReader(System.in));
+				dataIn = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+				dataOut = new PrintWriter(socket.getOutputStream(), true);
+
+
+				//Chat settings validation
+				if (validConnection){
+					System.out.println("\n===========SETTINGS VALIDATION===========");
+					System.out.println("Authentication - Login validation successful.");
+					scanner = new Scanner(System.in);
+					//settings = chatSettings(scanner); //!!!!!
+					settings = "111";
+					System.out.println("Client chat settings: " +settings );
+					dataOut.println(settings);
+					System.out.println("Waiting for sever to select chat settings...");
+					String sett = dataIn.readLine();
+
+					if (sett.equals("false")){
+						System.out.println("Settings - Error, different settings selected from Client, restarting program...");
+						validConnection = false;
+					}
+					encrypFlag = (settings.charAt(0) == '1') ? true : false;
+					integFlag = (settings.charAt(1) == '1') ? true : false;
+					authentFlag = (settings.charAt(2) == '1') ? true : false;
+				}
+
+				//Authentication process
+				if (validConnection && authentFlag){
+					System.out.println("Settings - Chat settings verified");
+					System.out.println("\n===========AUTHENTICATION===========");
+					
+					//Client authentication with Server
+					boolean validCredential = sendPass(scanner, dataOut, dataIn); 
+					if (!validCredential){
+						validConnection = false;
+					    System.out.println("Authentication - Wrong user or password, terminating connection.");
+					}
+					//Server authentication with Client
+					if (validCredential){
+						validCredential = validUser(dataOut, dataIn); 
+						if (!validCredential){
+							validConnection = false;
+						    System.out.println("Authentication - Wrong user or password, terminating connection.");
+						}else{
+							System.out.println("Authentication process completed");
+							
+						}
+					}
+
+				}
+
+
+
+
+				//Initiate conversation
+				if (validConnection){
+					System.out.println("\n===========CHAT INITIATED===========");
+				
+
+					receiving = new Thread(this);
+					sending = new Thread(this);
+					receiving.start();
+					sending.start();
+					receiving.join();
+					sending.join();
+
+					System.out.println("===========CHAT ENDED===========");
+					String request = "";
+					System.out.println("Type 'open session' to start connection with server");
+					request = scanner.nextLine();
+
+					while (!request.equals("open session")){
+						System.out.println("Command not valid, type 'open session' to start connection with server");
+						request = scanner.nextLine();
+					}
+					socket.close();
+					Thread.sleep(1000);
+					System.out.println("Client - END of Main ++++++++++++");  
+				}
+
+
+
+
+			} catch (IOException e) {
+				e.printStackTrace();
+				System.err.println("Connection to server lost.");
+			} catch (InterruptedException e2){
+				e2.printStackTrace();
+				System.err.println("Thread error.");
+
 			}
-			System.out.println("Settings - Options verified, Starting conversation. . . .");
-			System.out.println("*****************");
-			
-			//Initiate chat
-			t1 = new Thread(this);
-			t2 = new Thread(this);
-			t1.start();
-			t2.start();
 
-		} catch (Exception e) {
+
+		
+
 		}
-	}
+
+		
+}
 
 	public void run() {
 		try {
 
-
-			if (Thread.currentThread() == t2) {
-				//Client chat                 
+			//Client thread (sending)              
+			if (Thread.currentThread() == sending) {
 				while (true){
-					in = br1.readLine();
-					if (in.equals("END")){
-						System.out.println("Chat has ended.");
-						pr1.println("END");
-						System.exit(1);
+					sending.sleep(500);
+					if (!receiving.isAlive()){
+						// System.out.println("sending EXITING thread++++++");
+						break;
 					}
-					pr1.println(in);
+					if (console.ready()){
+						in = console.readLine();
+						if (in.equals("END")){
+							System.out.println("Chat has been closed by client.");
+							dataOut.println("END");
+							// System.out.println("t2 EXITING thread ++++++++++++++");
+							break;
+						}
+						dataOut.println(in);
+					}
 				}
+
+			//Server thread (receiving)
 			}else {
 				while(true) {
-					out = br2.readLine();
-					if (out.equals("END")){
-						System.out.println("Server has closed the connection.");
-						System.exit(1);
-
+					//Checks if server has closed chat
+					receiving.sleep(500);
+					if (!sending.isAlive()){
+						// System.out.println("receiving EXITING thread++++++");
+						break;
 					}
-					System.out.println("Server says : : : " + out);
+					if (dataIn.ready()){
+						out = dataIn.readLine();
+						if (out.equals("END")){
+							System.out.println("Server has closed the connection.");
+							dataOut.println("END");
+							// System.out.println("receiving EXITING thread++++++++++++++");
+							break;
+						}
+						System.out.println("Server says: " + out);
+					}
 				}
 			}
 		}catch (Exception e) {
