@@ -26,6 +26,7 @@ public class Client implements Runnable {
 		validConnection;
 	
 	String in = "", out = "";
+	ClientSignature clientSignatureManager;
 
 	private static String chatSettings(Scanner in){
 		String holder, settings = "";
@@ -158,7 +159,7 @@ public class Client implements Runnable {
 				dataOut = new PrintWriter(socket.getOutputStream(), true);
 
 
-				//Chat settings validation
+				//Settings exchange
 				if (validConnection){
 					System.out.println("\n===========SETTINGS VALIDATION===========");
 					System.out.println("Authentication - Login validation successful.");
@@ -185,45 +186,45 @@ public class Client implements Runnable {
 					System.out.println("\n===========AUTHENTICATION===========");
 					
 					//Client authentication with Server
-					boolean validCredential = sendPass(scanner, dataOut, dataIn); 
-					if (!validCredential){
-						validConnection = false;
-					    System.out.println("Authentication - Wrong user or password, terminating connection.");
-					}
+					// boolean validCredential = sendPass(scanner, dataOut, dataIn); 
+					// if (!validCredential){
+					// 	validConnection = false;
+					//     System.out.println("Authentication - Wrong user or password, terminating connection.");
+					// }
 					//Server authentication with Client
-					if (validCredential){
-						validCredential = validUser(dataOut, dataIn); 
-						if (!validCredential){
-							validConnection = false;
-						    System.out.println("Authentication - Wrong user or password, terminating connection.");
-						}else{
-							System.out.println("Authentication process completed");
+					// if (validCredential){
+					// 	validCredential = validUser(dataOut, dataIn); 
+					// 	if (!validCredential){
+					// 		validConnection = false;
+					// 	    System.out.println("Authentication - Wrong user or password, terminating connection.");
+					// 	}else{
+					// 		System.out.println("Authentication process completed");
 							
-						}
-					}
-
+					// 	}
+					// }
 				}
 
-
+				// Integrity - Initialize client signatures. This will only be done once per session (the files will be
+				// automatically overwrite each session)
+				if (integFlag){
+					clientSignatureManager = new ClientSignature();
+					clientSignatureManager.initializeClientSignature();
+				}
 
 
 				//Initiate conversation
 				if (validConnection){
 					System.out.println("\n===========CHAT INITIATED===========");
-				
-
 					receiving = new Thread(this);
 					sending = new Thread(this);
 					receiving.start();
 					sending.start();
 					receiving.join();
 					sending.join();
-
 					System.out.println("===========CHAT ENDED===========");
 					String request = "";
 					System.out.println("Type 'open session' to start connection with server");
 					request = scanner.nextLine();
-
 					while (!request.equals("open session")){
 						System.out.println("Command not valid, type 'open session' to start connection with server");
 						request = scanner.nextLine();
@@ -233,24 +234,16 @@ public class Client implements Runnable {
 					System.out.println("Client - END of Main ++++++++++++");  
 				}
 
-
-
-
 			} catch (IOException e) {
 				e.printStackTrace();
 				System.err.println("Connection to server lost.");
 			} catch (InterruptedException e2){
 				e2.printStackTrace();
 				System.err.println("Thread error.");
-
-			}
-
-
-		
-
+			} catch (Exception e3) {
+			    e3.printStackTrace();
+        	}
 		}
-
-		
 }
 
 	public void run() {
@@ -261,7 +254,6 @@ public class Client implements Runnable {
 				while (true){
 					sending.sleep(500);
 					if (!receiving.isAlive()){
-						// System.out.println("sending EXITING thread++++++");
 						break;
 					}
 					if (console.ready()){
@@ -272,17 +264,24 @@ public class Client implements Runnable {
 							// System.out.println("t2 EXITING thread ++++++++++++++");
 							break;
 						}
-						dataOut.println(in);
+						//Integrity - client send
+						if (integFlag){
+							String clientAfterSign = clientSignatureManager.signMessage(in); 
+							dataOut.println(clientAfterSign);
+						}
+						//No encryption, No integrity - Server send
+						else{
+							dataOut.println(in);
+						}
 					}
 				}
 
 			//Server thread (receiving)
 			}else {
 				while(true) {
-					//Checks if server has closed chat
+					//Checks if client thread is running
 					receiving.sleep(500);
 					if (!sending.isAlive()){
-						// System.out.println("receiving EXITING thread++++++");
 						break;
 					}
 					if (dataIn.ready()){
@@ -290,16 +289,29 @@ public class Client implements Runnable {
 						if (out.equals("END")){
 							System.out.println("Server has closed the connection.");
 							dataOut.println("END");
-							// System.out.println("receiving EXITING thread++++++++++++++");
 							break;
 						}
-						System.out.println("Server says: " + out);
+						// Validating message integrity on the client side
+						if (integFlag){
+							boolean validateServerSignature = clientSignatureManager.verifyMessage(out);
+							if (validateServerSignature) {
+								String message = out.split(":")[1];
+								System.out.println("(Valid Sig) - Server says: " + message);
+							}else{
+								String message = out.split(":")[1];
+								System.out.println("(Invalid Sig) - Server says: " + message);
+							}
+						}
+						//No encryption, No integrity - client receive
+						else{
+							System.out.println("Server says: " + out);
+						}
 					}
 				}
 			}
 		}catch (Exception e) {
+			e.printStackTrace();
 		}
-
 	}
 
 	 public static void main(String[] args) {

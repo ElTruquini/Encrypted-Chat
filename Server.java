@@ -1,16 +1,15 @@
 
+//Authentication dependencies
 import java.io.*;
 import java.net.*;
 import java.util.*;
 import java.security.*;
-import javax.net.ssl.*;
-import com.sun.net.ssl.*;
-import com.sun.net.ssl.internal.ssl.Provider;
 
-import javax.net.ssl.SSLServerSocket;
-import javax.net.ssl.SSLServerSocketFactory;
-import javax.net.ssl.SSLSession;
-import javax.security.cert.X509Certificate;
+//Integrity dependencies
+import java.security.spec.*;
+import org.bouncycastle.util.encoders.Hex;
+import java.nio.charset.Charset;
+
 
 
 public class Server implements Runnable {
@@ -26,7 +25,7 @@ public class Server implements Runnable {
 		validConnection;
 
 	String in="",out="", clientSett = "";
-
+	ServerSignature serverSignatureManager;
 		
 
 	private static String chatSettings(Scanner in){
@@ -182,6 +181,7 @@ public class Server implements Runnable {
 				dataOut = new PrintWriter(socket.getOutputStream(), true);
 				dataIn = new BufferedReader(new InputStreamReader(socket.getInputStream()));
 
+				//Settings exchange
 				if (validConnection){
 					System.out.println("\n===========SETTINGS VALIDATION===========");
 					settings ="111";  
@@ -189,36 +189,37 @@ public class Server implements Runnable {
 					validateSettings(settings, dataIn); //!!!!!!!!	
 				}
 
-				//Authentication process
-				if (validConnection && authentFlag){
-					System.out.println("Settings - Chat settings verified");
-					System.out.println("\n===========AUTHENTICATION===========");
+				// //Authentication 
+				// if (validConnection && authentFlag){
+				// 	System.out.println("Settings - Chat settings verified");
+				// 	System.out.println("\n===========AUTHENTICATION===========");
 					
-					//Client authentication with Server
-					boolean validCredential = validUser(dataOut, dataIn); 
-					System.out.println("AUTHENTICATION RES: " + validCredential);
-					if (!validCredential){
-						validConnection = false;
-					    System.out.println("Authentication - Wrong user or password, terminating connection.");
-					}
+				// 	//Client authentication with Server
+				// 	boolean validCredential = validUser(dataOut, dataIn); 
+				// 	if (!validCredential){
+				// 		validConnection = false;
+				// 	    System.out.println("Authentication - Wrong user or password, terminating connection.");
+				// 	}
 
-					//Server authentication with client
-					if (validCredential){
-						validCredential = sendPass(scanner, dataOut, dataIn); 
-						if (!validCredential){
-							validConnection = false;
-						    System.out.println("Authentication - Wrong user or password, terminating connection.");
-						}else{
-							System.out.println("Authentication process completed");
-							
-						}
-					}
+				// 	//Server authentication with client
+				// 	System.out.println("Client credentials verified, please provide Server credentials...");
+				// 	if (validCredential){
+				// 		validCredential = sendPass(scanner, dataOut, dataIn); 
+				// 		if (!validCredential){
+				// 			validConnection = false;
+				// 		    System.out.println("Authentication - Wrong user or password, terminating connection.");
+				// 		}else{
+				// 			System.out.println("Authentication process completed");
+				// 		}
+				// 	}
+				// }
 
+				// Integrity - Initialize server signatures. This will only be done once per session (the files will be
+				// automatically overwrite each session)
+				if (integFlag){
+					serverSignatureManager = new ServerSignature();
+					serverSignatureManager.initializeServerSignature();
 				}
-
-
-
-
 
 				//Initiate conversation
 				if (validConnection ){
@@ -237,40 +238,36 @@ public class Server implements Runnable {
 				socket.close();
 
 			} catch (Exception e) {
-			    System.err.println("Unable to initiate connection.");
 			    e.printStackTrace();
-			    System.exit(1);
-	
-
-        }
-
-
+        	}
 		}
-
-
-
 	}
 
 	public void run() {
-
 		try {
+			//Server thread (sending)
 			if (Thread.currentThread() == sending) {
-
-				//Server thread (sending)
 				while(true) {
-					//Checks if client has closed chat
+					//Checks if client thread is running
 					sending.sleep(500);
 					if (!receiving.isAlive()){
 					 	break;
 					}
-					//Checks if server has typed something
+					//Server send message 
 					if (console.ready()){
 						in = console.readLine();
 						if (in.equals("END")){
 							dataOut.println("END");
 							break;
 						}
-						dataOut.println(in);
+						//Integrity - Server send
+						if (integFlag){
+							String serverAfterSign = serverSignatureManager.signMessage(in); 
+							dataOut.println(serverAfterSign);
+						}
+						else{
+							dataOut.println(in);
+						}
 					}
 				} 
 
@@ -282,14 +279,25 @@ public class Server implements Runnable {
 						System.out.println("Connection has been terminated");			
 						break;
 					}
-					System.out.println("Client says: " + out);
+					// Validating message integrity on the server side
+					if (integFlag){
+						boolean validateClientSignature = serverSignatureManager.verifyMessage(out);
+						System.out.println("validateClientSignature: " + validateClientSignature);
+						if (validateClientSignature) {
+							String message = out.split(":")[1];
+							System.out.println("(Valid Sig) - Client says: " + message);
+						}else{
+							String message = out.split(":")[1];
+							System.out.println("(Invalid Sig) - Client says: " + message);
+						}
+					//No encryption, No integrity
+					}else{
+						System.out.println("Client says: " + out);
+					}
 				} 
 			}
-
 		}catch (Exception e) {
 			e.printStackTrace();
-			System.exit(1);
-
 		}
 	}
 
