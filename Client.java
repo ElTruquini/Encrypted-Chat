@@ -16,9 +16,11 @@ import javax.net.ssl.SSLSocketFactory;
 
 public class Client implements Runnable {
 
-	private String settings; //chatAt(0) = encr, (1) = integrity, (2) = authentication
+	protected String settings; //chatAt(0) = encr, (1) = integrity, (2) = authentication
 	BufferedReader console, dataIn;
 	PrintWriter dataOut;
+	DataInputStream dIn;
+	DataOutputStream dOut;
 	Thread receiving, sending;
 	boolean authentFlag, 
 		integFlag,
@@ -26,7 +28,10 @@ public class Client implements Runnable {
 		validConnection;
 	
 	String in = "", out = "";
-	ClientSignature clientSignatureManager;
+	protected ClientSignature clientSignatureManager;
+	protected AsymmetricCryptography ac;
+	private byte[] clientPrivateKey, serverPublicKey;
+
 
 	private static String chatSettings(Scanner in){
 		String holder, settings = "";
@@ -82,6 +87,7 @@ public class Client implements Runnable {
 	}
 
 	private static boolean sendPass(Scanner scanner, PrintWriter dataOut, BufferedReader dataIn){
+		scanner = new Scanner(System.in);	
 		System.out.println("LOGIN: Please enter your username:");
 		String userName = scanner.nextLine();
         System.out.println("userName: " + userName);
@@ -146,26 +152,24 @@ public class Client implements Runnable {
 
 		while (true){
 			Socket socket;
-
 			try {
 				System.out.println("\n===========CLIENT INITIALIZED===========");
 				validConnection = true;
 				System.out.println("Connecting to server...");
-
 				socket = new Socket("localhost", 5000);
 
 				console = new BufferedReader(new InputStreamReader(System.in));
 				dataIn = new BufferedReader(new InputStreamReader(socket.getInputStream()));
 				dataOut = new PrintWriter(socket.getOutputStream(), true);
 
-
 				//Settings exchange
 				if (validConnection){
 					System.out.println("\n===========SETTINGS VALIDATION===========");
 					System.out.println("Authentication - Login validation successful.");
 					scanner = new Scanner(System.in);
-					//settings = chatSettings(scanner); //!!!!!
-					settings = "111";
+
+					// settings = "110"; //[0] Encryp, [1] Integ, [2] Auth
+					settings = chatSettings(scanner);
 					System.out.println("Client chat settings: " +settings );
 					dataOut.println(settings);
 					System.out.println("Waiting for sever to select chat settings...");
@@ -186,31 +190,46 @@ public class Client implements Runnable {
 					System.out.println("\n===========AUTHENTICATION===========");
 					
 					//Client authentication with Server
-					// boolean validCredential = sendPass(scanner, dataOut, dataIn); 
-					// if (!validCredential){
-					// 	validConnection = false;
-					//     System.out.println("Authentication - Wrong user or password, terminating connection.");
-					// }
+					boolean validCredential = sendPass(scanner, dataOut, dataIn); 
+					if (!validCredential){
+						validConnection = false;
+					    System.out.println("Authentication - Wrong user or password, terminating connection.");
+					}
 					//Server authentication with Client
-					// if (validCredential){
-					// 	validCredential = validUser(dataOut, dataIn); 
-					// 	if (!validCredential){
-					// 		validConnection = false;
-					// 	    System.out.println("Authentication - Wrong user or password, terminating connection.");
-					// 	}else{
-					// 		System.out.println("Authentication process completed");
+					if (validCredential){
+						validCredential = validUser(dataOut, dataIn); 
+						if (!validCredential){
+							validConnection = false;
+						    System.out.println("Authentication - Wrong user or password, terminating connection.");
+						}else{
+							System.out.println("Authentication process completed");
 							
-					// 	}
-					// }
+						}
+					}
 				}
 
-				// Integrity - Initialize client signatures. This will only be done once per session (the files will be
+				// Initialize client signatures. This will only be done once per session (the files will be
 				// automatically overwrite each session)
-				if (integFlag){
+				if (validConnection && (integFlag || encrypFlag)){
+					System.out.println("\n===========GENERATING SIGNATURE KEYS===========");
 					clientSignatureManager = new ClientSignature();
 					clientSignatureManager.initializeClientSignature();
+					System.out.println("Signature Keys intialization completed...");
+
 				}
 
+				// Encryption parameters
+				if (validConnection && encrypFlag){
+					System.out.println("\n===========RETRIEVING ENCRYPTION KEYS===========");
+					System.out.println("Retrieving public and private keys...");
+					//Loading exiting client RSA public keys and server RSA private key
+					ac = new AsymmetricCryptography();
+					clientPrivateKey = ac.getPrivate("./Clientcred/clientRSAprivateKey").getEncoded();
+					serverPublicKey = ac.getPublic("./Clientcred/serverRSApublicKey").getEncoded();
+
+					dOut = new DataOutputStream(socket.getOutputStream());
+					dIn = new DataInputStream(socket.getInputStream());
+				}
 
 				//Initiate conversation
 				if (validConnection){
@@ -221,10 +240,10 @@ public class Client implements Runnable {
 					sending.start();
 					receiving.join();
 					sending.join();
-					System.out.println("===========CHAT ENDED===========");
-					String request = "";
+					System.out.println("===========END OF CHAT===========");
 					System.out.println("Type 'open session' to start connection with server");
-					request = scanner.nextLine();
+					scanner = new Scanner(System.in);
+					String request = scanner.nextLine();
 					while (!request.equals("open session")){
 						System.out.println("Command not valid, type 'open session' to start connection with server");
 						request = scanner.nextLine();
@@ -249,7 +268,7 @@ public class Client implements Runnable {
 	public void run() {
 		try {
 
-			//Client thread (sending)              
+			//Client sending thread              
 			if (Thread.currentThread() == sending) {
 				while (true){
 					sending.sleep(500);
@@ -259,54 +278,152 @@ public class Client implements Runnable {
 					if (console.ready()){
 						in = console.readLine();
 						if (in.equals("END")){
-							System.out.println("Chat has been closed by client.");
-							dataOut.println("END");
-							// System.out.println("t2 EXITING thread ++++++++++++++");
-							break;
+							System.out.println("Connection has been terminated");
+							if (encrypFlag  && !integFlag){
+								byte[] encryptedData = ac.encrypt(serverPublicKey, in.getBytes());
+								dOut.writeInt(encryptedData.length);
+								dOut.write(encryptedData);
+								break;
+							}else if (encrypFlag && integFlag) {
+								String serverAfterSign = clientSignatureManager.signMessage(in); 
+								// System.out.println("serverAfterSign: " + serverAfterSign);
+								byte[] encryptedData = ac.encrypt(serverPublicKey, in.getBytes());
+								dataOut.println(serverAfterSign);
+
+							}
+
+
+							else{
+								dataOut.println("END");
+								break;
+							}
 						}
-						//Integrity - client send
-						if (integFlag){
+						// (Integrity only) Client send
+						if (integFlag && !encrypFlag){
 							String clientAfterSign = clientSignatureManager.signMessage(in); 
 							dataOut.println(clientAfterSign);
 						}
-						//No encryption, No integrity - Server send
+						//(Encryption only) Client send
+						else if (!integFlag && encrypFlag) {
+							byte[] encryptedData = ac.encrypt(serverPublicKey, in.getBytes());
+							// System.out.println("Sending: " + in + ", encrypted message: " + encryptedData);
+							dOut.writeInt(encryptedData.length);
+							dOut.write(encryptedData);
+
+
+						}
+						//(Encryption and Integrity) Client send
+						else if (integFlag && encrypFlag) {
+							String serverAfterSign = clientSignatureManager.signMessage(in); 
+							// System.out.println("serverAfterSign: " + serverAfterSign);
+							byte[] encryptedData = ac.encrypt(serverPublicKey, in.getBytes());
+							dataOut.println(serverAfterSign);
+
+
+						}
+						// (No encryption, No integrity) - Client send plaintext
 						else{
 							dataOut.println(in);
 						}
 					}
 				}
 
-			//Server thread (receiving)
+			//Client receiving thread 
 			}else {
 				while(true) {
-					//Checks if client thread is running
+					//Checks if server thread is running
 					receiving.sleep(500);
 					if (!sending.isAlive()){
 						break;
 					}
-					if (dataIn.ready()){
-						out = dataIn.readLine();
-						if (out.equals("END")){
+
+					//(Integrity only)
+					if (!encrypFlag && integFlag){
+						if (dataIn.ready()){
+							out = dataIn.readLine();
+							// Check if end of communication
+							if (out.equals("END")){
+								System.out.println("Server has closed the connection.");
+								dataOut.println("END");
+								break;
+							}
+							// (Integrity only) Client recieve
+							if (integFlag){
+								boolean validateServerSignature = clientSignatureManager.verifyMessage(out);
+								if (validateServerSignature) {
+									String message = out.split(":")[1]; 
+									System.out.println("(Valid Sig.) - Server says: " + message);
+								}else{
+									String message = out.split(":")[1];
+									System.out.println("(Invalid Sig.) - Server says: " + message);
+								}
+							} 							
+						}
+					}
+					// (Encryption only) Client recieve - DataStreams used to send binary data
+					else if (!integFlag && encrypFlag) {
+						int length = dIn.readInt(); 
+						byte[] message = new byte[length];
+						if(length>0) {
+						    dIn.readFully(message, 0, message.length); 
+						}
+						byte[] decryptedData = ac.decrypt(clientPrivateKey, message);
+						String decrypt = new String(decryptedData);
+						if (decrypt.equals("END")){
 							System.out.println("Server has closed the connection.");
-							dataOut.println("END");
+							byte[] encryptedData = ac.encrypt(serverPublicKey, decrypt.getBytes());
+							dOut.writeInt(encryptedData.length);
+							dOut.write(encryptedData);
+
 							break;
 						}
-						// Validating message integrity on the client side
-						if (integFlag){
-							boolean validateServerSignature = clientSignatureManager.verifyMessage(out);
-							if (validateServerSignature) {
-								String message = out.split(":")[1];
-								System.out.println("(Valid Sig) - Server says: " + message);
-							}else{
-								String message = out.split(":")[1];
-								System.out.println("(Invalid Sig) - Server says: " + message);
-							}
+						System.out.println("(Decrypted message) - Server says: " + decrypt);
+
+					}
+					//(Encryption and Integrity) - Client receive
+					else if (integFlag && encrypFlag){
+						out = dataIn.readLine();
+						boolean validateServerSignature = clientSignatureManager.verifyMessage(out);
+						if (validateServerSignature) {
+							String mess = out.split(":")[1]; 
+							if (mess.equals("END")){
+								System.out.println("Server has closed the connection.");
+								String serverAfterSign = clientSignatureManager.signMessage(mess); 
+								// System.out.println("serverAfterSign: " + serverAfterSign);
+								byte[] encryptedData = ac.encrypt(serverPublicKey, mess.getBytes());
+								dataOut.println(serverAfterSign);
+								break;
+							}	
+							System.out.println("(Decrypted - Valid sig.) - Server says: " + mess);
+						}else{
+							String mess = out.split(":")[1];
+							if (mess.equals("END")){
+								System.out.println("Server has closed the connection.");
+								String serverAfterSign = clientSignatureManager.signMessage(mess); 
+								// System.out.println("serverAfterSign: " + serverAfterSign);
+								byte[] encryptedData = ac.encrypt(serverPublicKey, mess.getBytes());
+								dataOut.println(serverAfterSign);
+								break;
+							}	
+							System.out.println("(Decrypted - Invalid sig.) - Server says: " + mess);
 						}
-						//No encryption, No integrity - client receive
-						else{
+					}
+
+					//(No encryption, No integrity) Client recieve plaintext
+					else{
+						if (dataIn.ready()){
+							out = dataIn.readLine();
+							if (out.equals("END")){
+								System.out.println("Server has closed the connection.");
+								dataOut.println("END");
+								break;
+							}			
 							System.out.println("Server says: " + out);
 						}
 					}
+
+
+
 				}
 			}
 		}catch (Exception e) {

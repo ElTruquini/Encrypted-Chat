@@ -30,8 +30,10 @@ class ServerSignature {
 
 		// Save the public key to a file
 		byte[] publicKey = pub.getEncoded();
-		FileOutputStream keyfos = new FileOutputStream("./Servercred/serverPublicSignatureKey");
+		FileOutputStream keyfos = new FileOutputStream("./Servercred/serverPublicKeySignature");
 		keyfos.write(publicKey);
+
+
 		keyfos.close();
 
 	}
@@ -56,7 +58,7 @@ class ServerSignature {
 	throws Exception {
 
 		// Import encoded public key
-		FileInputStream keyfis = new FileInputStream("./Clientcred/clientPublicSignatureKey");
+		FileInputStream keyfis = new FileInputStream("./Clientcred/clientPublicKeySignature");
 		byte[] encKey = new byte[keyfis.available()];  
 		keyfis.read(encKey);
 		keyfis.close();

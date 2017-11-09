@@ -13,8 +13,7 @@ class ClientSignature {
 	protected ClientSignature() throws Exception {}
 
 	// Create the public/private key pair for the client here
-	protected void initializeClientSignature() 
-	throws Exception {
+	protected void initializeClientSignature() throws Exception {
 
 		// Generate the a digital signature key pair
 		KeyPairGenerator keyGen = KeyPairGenerator.getInstance("DSA", "SUN");
@@ -31,14 +30,16 @@ class ClientSignature {
 
 		// Save the public key to a file
 		byte[] publicKey = pub.getEncoded();
-		FileOutputStream keyfos = new FileOutputStream("./Clientcred/clientPublicSignatureKey");
+		FileOutputStream keyfos = new FileOutputStream("./Clientcred/clientPublicKeySignature");
 		keyfos.write(publicKey);
+		
+
+
 		keyfos.close();
 
 	}
 	
-	protected String signMessage(String message) 
-	throws Exception {
+	protected String signMessage(String message) throws Exception {
 
 		// Update the the signature and sign the data
 		byte[] byteMessage = message.getBytes();
@@ -52,11 +53,10 @@ class ClientSignature {
 		return stringSignature + ":" + message;
 	}
 
-	protected boolean verifyMessage(String serverMessage) 
-	throws Exception {
+	protected boolean verifyMessage(String serverMessage) throws Exception {
 
 		// Import encoded public key
-		FileInputStream keyfis = new FileInputStream("./Servercred/serverPublicSignatureKey");
+		FileInputStream keyfis = new FileInputStream("./Servercred/serverPublicKeySignature");
 		byte[] encKey = new byte[keyfis.available()];  
 		keyfis.read(encKey);
 		keyfis.close();
