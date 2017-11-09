@@ -1,17 +1,21 @@
-
-//Authentication dependencies
+//
+// ***************************************************************************************
+// Developed by: Ben Wolfe (V00205547) and Daniel Olaya (V00855054)
+// Course: SENG360 - Security Engineering
+// Date: November, 2017
+// Assignment 3 - Chat program that allows to users to communicate using different 
+// security parameters such as encryption, integrity (digital signatures) and mutual authentication.
+// ***************************************************************************************
+//
 import java.io.*;
 import java.net.*;
 import java.util.*;
 import java.security.*;
-
-//Integrity dependencies
 import java.security.spec.*;
 import org.bouncycastle.util.encoders.Hex;
 import java.nio.charset.Charset;
 
-
-
+// Implements the Server program, always running and waiting for client to innitiate connection in port 5000.
 public class Server implements Runnable {
 
 	protected String settings; //charAt(0) = encr, (1) = integrity, (2) = authentication
@@ -33,11 +37,11 @@ public class Server implements Runnable {
 	protected AsymmetricCryptography ac;
 	private byte[] serverPrivateKey, clientPublicKey;
 
-
+	// Retreives user settings and appends result to string 'settings' which is later
+	// used to compare with Client settings.
 	private static String chatSettings(Scanner in){
 		String holder, settings = "";
 		System.out.println("Please choose the chat settings...");
-		
 		System.out.println("(Encryption) - Would you like your messages to be encrypted? (y or n)");
 		holder = in.next();
 		while (holder.length() != 1 ){
@@ -45,7 +49,6 @@ public class Server implements Runnable {
 			holder = in.next();
 		}
 		settings  += ( holder.equals("y")|| holder.equals("Y")) ? 1 : 0;
-
 		System.out.println("(Integrity) - Would you like to check integrity on messages? (y or n)");
 		holder = in.next();
 		while (holder.length() != 1 ){
@@ -53,7 +56,6 @@ public class Server implements Runnable {
 			holder = in.next();
 		}
 		settings  += ( holder.equals("y")|| holder.equals("Y")) ? 1 : 0;
-
 		System.out.println("(Authentication) - Would you like to authenticate messages? (y or n)");
 		holder = in.next();
 		while (holder.length() != 1 ){
@@ -61,10 +63,10 @@ public class Server implements Runnable {
 			holder = in.next();
 		}
 		settings  += ( holder.equals("y")|| holder.equals("Y")) ? 1 : 0;
-
 		return settings;
 	}
 
+	//Method used to compare Server and Client settings, if settings match, 'true' is returned 
 	private boolean validateSettings(String settings, BufferedReader dataIn){
 		try{
 			System.out.println("Server chat settings: " +settings );
@@ -77,11 +79,9 @@ public class Server implements Runnable {
 				return false;
 			}
 			dataOut.println("true"); //Settings match
-
 			encrypFlag = (settings.charAt(0) == '1') ? true : false;
 			integFlag = (settings.charAt(1) == '1') ? true : false;
 			authentFlag = (settings.charAt(2) == '1') ? true : false;
-
 			
 		}catch (Exception e){
 			System.out.println("Settings - Connection Error");
@@ -92,13 +92,13 @@ public class Server implements Runnable {
     //Converts a byte array into a string in hex representation.
     public static String bytesToHex (byte[] bytes){
         StringBuilder builder = new StringBuilder();
-
         for(byte b : bytes) {
             builder.append(String.format("%02x", b));
         }
         return builder.toString(); 
     }
 
+    // Method used to hash a string (password) which can be sent over an insecure connection.
     private static byte[] hash (String stringy) throws Exception{
         byte[] digest = new byte[0];
         byte[] bytesOfMessage = stringy.getBytes("UTF-8");
@@ -107,15 +107,15 @@ public class Server implements Runnable {
         digest = md.digest(bytesOfMessage);
         // System.out.println("bytes digest: "+digest);
         // System.out.println("hex digest: "+ bytesToHex(digest));
-
         return digest;
     }
 
-
+    // Method used to receive client username and hashed password. If username exists on the credential.txt
+    // database, then the password given by client will be hashed with the salt (utoken[1]). If the result
+    // es equal to h(salt + h(pass)), then it is a valid password and 'true' will be returned.
 	private static boolean validUser(PrintWriter dataOut, BufferedReader dataIn){
 		boolean found = false;
 		String [] utoken = null;
-
 		System.out.println("Waiting for client credentials...");
 		try{
 			String user = dataIn.readLine();
@@ -129,7 +129,7 @@ public class Server implements Runnable {
 					found = true;
 				}
 				if (found){
-					String preHash = utoken[1] + pass;
+					String preHash = utoken[1] + pass; //password hashed with salt
 					String postHash = bytesToHex(hash(preHash));
 					if (postHash.equals(utoken[2])){
 						dataOut.println("true");
@@ -145,6 +145,7 @@ public class Server implements Runnable {
 		return false;
 	}
 
+	// Method takes login credentials from user and hashes the password to send over communication channel
 	private static boolean sendPass(Scanner scanner, PrintWriter dataOut, BufferedReader dataIn){
 		scanner = new Scanner(System.in);
 		System.out.println("LOGIN: Please enter your username:");
@@ -169,13 +170,13 @@ public class Server implements Runnable {
 
 	public Server() {
 		Scanner scanner = new Scanner(System.in);
-
 		while (true){
 			clientSett = "";
 			authentFlag = false; integFlag = false; encrypFlag = false;
 			System.out.println("\n===========SERVER INITIALIZED===========");
 
 			try{
+				//Setting up connection
 				validConnection = true;
 				serversocket = new ServerSocket(5000);
 				System.out.println("Waiting for client to connect...");
@@ -186,7 +187,7 @@ public class Server implements Runnable {
 				dataOut = new PrintWriter(socket.getOutputStream(), true);
 				dataIn = new BufferedReader(new InputStreamReader(socket.getInputStream()));
 
-				//Settings exchange
+				//Settings parameters
 				if (validConnection){
 					System.out.println("\n===========SETTINGS VALIDATION===========");
 
@@ -195,18 +196,16 @@ public class Server implements Runnable {
 					validateSettings(settings, dataIn); 	
 				}
 
-				//Authentication 
+				//Authentication process
 				if (validConnection && authentFlag){
 					System.out.println("Settings - Chat settings verified");
 					System.out.println("\n===========AUTHENTICATION===========");
-					
 					//Client authentication with Server
 					boolean validCredential = validUser(dataOut, dataIn); 
 					if (!validCredential){
 						validConnection = false;
 					    System.out.println("Authentication - Wrong user or password, terminating connection.");
 					}
-
 					//Server authentication with client
 					System.out.println("Client credentials verified, please provide Server credentials...");
 					if (validCredential){
@@ -220,15 +219,16 @@ public class Server implements Runnable {
 					}
 				}
 
-				// Initialize server signatures. This will only be done once per session (the files will be
-				// automatically overwrite each session)
+				// Integrity parameters - Initializes server signatures. 
+				// This will only be done once per session (the files will be automatically overwrite each session)
 				if (validConnection && (integFlag || encrypFlag)){
 					System.out.println("\n===========GENERATING SIGNATURE KEYS===========");
 
 					serverSignatureManager = new ServerSignature();
 					serverSignatureManager.initializeServerSignature();
-					System.out.println("Signature Keys intialization completed...");
+					System.out.println("Signature keys intialization completed...");
 				}
+
 				// Enctryption parameters
 				if (validConnection && encrypFlag){
 					System.out.println("\n===========RETRIEVING ENCRYPTION KEYS===========");
@@ -238,11 +238,10 @@ public class Server implements Runnable {
 					serverPrivateKey = ac.getPrivate("./Servercred/serverRSAprivateKey").getEncoded();
 					clientPublicKey = ac.getPublic("./Servercred/clientRSApublicKey").getEncoded();
 					//Used for sending byte array
-	
 					dOut = new DataOutputStream(socket.getOutputStream());
 					dIn = new DataInputStream(socket.getInputStream());
 				}
-				//Initiate conversation
+				//Initiate conversation (threads)
 				if (validConnection ){
 					System.out.println("\n===========CHAT INITIATED===========");
 					sending = new Thread(this);
@@ -266,15 +265,15 @@ public class Server implements Runnable {
 
 	public void run() {
 		try {
-			//Server sending thread
+			// Server sending thread
 			if (Thread.currentThread() == sending) {
 				while(true) {
-					//Checks if client thread is running
+					// Checks if client thread is still running
 					sending.sleep(500);
 					if (!receiving.isAlive()){
 					 	break;
 					}
-					//Server send message
+					// Server send message
 					if (console.ready()){
 						in = console.readLine();
 						if (in.equals("END")){
@@ -293,8 +292,8 @@ public class Server implements Runnable {
 								dataOut.println("END");
 								break;
 							}
-						}
-						//(Integrity only) Server send
+						} 
+						// (Integrity only) Server send
 						if (integFlag && !encrypFlag){
 							String serverAfterSign = serverSignatureManager.signMessage(in); 
 							dataOut.println(serverAfterSign);
@@ -349,9 +348,9 @@ public class Server implements Runnable {
 					}
 					// (Encryption only) Server recieve - DataStreams used to send binary data
 					else if (!integFlag && encrypFlag) {
-
 						int length = dIn.readInt(); 
 						byte[] message = new byte[length];
+						
 						if(length>0) {
 						    dIn.readFully(message, 0, message.length); 
 						}
@@ -381,7 +380,6 @@ public class Server implements Runnable {
 								dataOut.println(serverAfterSign);
 								break;
 							}	
-
 							System.out.println("(Decrypted - Valid sig.) - Server says: " + mess);
 						}else{
 							String mess = out.split(":")[1];

@@ -1,5 +1,16 @@
 
+//
+// ***************************************************************************************
+// Modified by: Ben Wolfe (V00205547) and Daniel Olaya (V00855054)
+// Course: SENG360 - Security Engineering
+// Date: November, 2017
+// Assignment 3 - Chat program that allows to users to communicate using different 
+// security parameters such as encryption, integrity (digital signatures) and mutual authentication.
+// ***************************************************************************************
+//
+
 // Asymmetric encryption implementation as per documentation
+// https://stackoverflow.com/questions/31915617/how-to-encrypt-string-with-public-key-and-decrypt-with-private-key/39615507
 
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -8,13 +19,9 @@ import java.io.*;
 import java.nio.*;
 import java.security.*;
 import java.security.spec.*;
-
 import javax.crypto.Cipher;
 
-/**
- * @author visruthcv
- *
- */
+// Helper class used to create and manage private and public keys, encrypt and decrypt messages.
 public class AsymmetricCryptography {
 
     private static final String ALGORITHM = "RSA";
@@ -58,6 +65,7 @@ public class AsymmetricCryptography {
     	fos.close();
     }
 
+    // Helper method used to load existing keys from a file
     // https://stackoverflow.com/questions/11410770/load-rsa-public-key-from-file
     public static PrivateKey getPrivate (String filename) throws Exception {
 
@@ -68,6 +76,7 @@ public class AsymmetricCryptography {
       return kf.generatePrivate(spec);
     }
 
+    // Helper method used to load existing keys from a file
     // https://stackoverflow.com/questions/11410770/load-rsa-public-key-from-file
     public static PublicKey getPublic(String filename) throws Exception {
 

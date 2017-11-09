@@ -1,3 +1,12 @@
+//
+// ***************************************************************************************
+// Developed by: Ben Wolfe (V00205547) and Daniel Olaya (V00855054)
+// Course: SENG360 - Security Engineering
+// Date: November, 2017
+// Assignment 3 - Chat program that allows to users to communicate using different 
+// security parameters such as encryption, integrity (digital signatures) and mutual authentication.
+// ***************************************************************************************
+//
 import java.io.*;
 import java.net.*;
 import java.util.*;
@@ -13,7 +22,7 @@ import javax.net.ssl.SSLSession;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 
-
+// Implements the Client program, always connecting to server in port 5000.
 public class Client implements Runnable {
 
 	protected String settings; //chatAt(0) = encr, (1) = integrity, (2) = authentication
@@ -32,7 +41,8 @@ public class Client implements Runnable {
 	protected AsymmetricCryptography ac;
 	private byte[] clientPrivateKey, serverPublicKey;
 
-
+	// Retreives user settings and appends result to string 'settings' which is later
+	// used to compare with Server settings.
 	private static String chatSettings(Scanner in){
 		String holder, settings = "";
 		System.out.println("Please choose the chat settings...");
@@ -44,7 +54,6 @@ public class Client implements Runnable {
 			holder = in.next();
 		}
 		settings  += ( holder.equals("y")|| holder.equals("Y")) ? 1 : 0;
-
 		System.out.println("(Integrity) - Would you like to check integrity on messages? (y or n)");
 		holder = in.next();
 		while (holder.length() != 1 ){
@@ -60,20 +69,19 @@ public class Client implements Runnable {
 			holder = in.next();
 		}
 		settings  += ( holder.equals("y")|| holder.equals("Y")) ? 1 : 0;
-
 		return settings;
 	}
 
 	//Converts a byte array into a string in hex representation.
 	public static String bytesToHex (byte[] bytes){
 		StringBuilder builder = new StringBuilder();
-
 		for(byte b : bytes) {
 			builder.append(String.format("%02x", b));
 		}
 		return builder.toString(); 
 	}
 
+	// Method used to hash a string (password) which can be sent over an insecure connection.
 	private static byte[] hash (String stringy) throws Exception{
 		byte[] digest = new byte[0];
 		byte[] bytesOfMessage = stringy.getBytes("UTF-8");
@@ -82,10 +90,10 @@ public class Client implements Runnable {
 		digest = md.digest(bytesOfMessage);
 		 // System.out.println("bytes digest: "+digest);
 		 // System.out.println("hex digest: "+ bytesToHex(digest));
-
 		return digest;
 	}
 
+	// Method takes login credentials from user and hashes the password to send over communication channel
 	private static boolean sendPass(Scanner scanner, PrintWriter dataOut, BufferedReader dataIn){
 		scanner = new Scanner(System.in);	
 		System.out.println("LOGIN: Please enter your username:");
@@ -108,20 +116,19 @@ public class Client implements Runnable {
         return false;
 	}
 
+	// Method used to receive Serrver username and hashed password. If username exists on the credential.txt
+	// database, then the password given by client will be hashed with the salt (utoken[1]). If the result
+	// es equal to h(salt + h(pass)), then it is a valid password and 'true' will be returned.
 	private static boolean validUser(PrintWriter dataOut, BufferedReader dataIn){
 		boolean found = false;
 		String [] utoken = null;
-
 		System.out.println("Client credentials verification completed");
 		System.out.println("Waiting for client credentials...");
 
 		try{
 			String user = dataIn.readLine();
 			String pass = dataIn.readLine();
-
 			System.out.println("Authentication - user: "+ user + " passhash:"+ pass);
-
-
 			File file = new File ("./Clientcred/credentials.txt");
 			Scanner fileScanner = new Scanner (file);
 			while (fileScanner.hasNextLine()){
@@ -147,12 +154,14 @@ public class Client implements Runnable {
 		return false;
 	}
 
+
 	public Client() {
 		Scanner scanner = new Scanner(System.in);
-
 		while (true){
 			Socket socket;
+
 			try {
+				// Setting up connection
 				System.out.println("\n===========CLIENT INITIALIZED===========");
 				validConnection = true;
 				System.out.println("Connecting to server...");
@@ -162,10 +171,10 @@ public class Client implements Runnable {
 				dataIn = new BufferedReader(new InputStreamReader(socket.getInputStream()));
 				dataOut = new PrintWriter(socket.getOutputStream(), true);
 
-				//Settings exchange
+				// Settings parameters
 				if (validConnection){
 					System.out.println("\n===========SETTINGS VALIDATION===========");
-					System.out.println("Authentication - Login validation successful.");
+					System.out.println("Connected to server...");
 					scanner = new Scanner(System.in);
 
 					// settings = "110"; //[0] Encryp, [1] Integ, [2] Auth
@@ -188,7 +197,6 @@ public class Client implements Runnable {
 				if (validConnection && authentFlag){
 					System.out.println("Settings - Chat settings verified");
 					System.out.println("\n===========AUTHENTICATION===========");
-					
 					//Client authentication with Server
 					boolean validCredential = sendPass(scanner, dataOut, dataIn); 
 					if (!validCredential){
@@ -203,18 +211,17 @@ public class Client implements Runnable {
 						    System.out.println("Authentication - Wrong user or password, terminating connection.");
 						}else{
 							System.out.println("Authentication process completed");
-							
 						}
 					}
 				}
 
-				// Initialize client signatures. This will only be done once per session (the files will be
-				// automatically overwrite each session)
+				// Integrity parameters - Initialize client signatures.
+				// This will only be done once per session (the files will be automatically overwrite each session)
 				if (validConnection && (integFlag || encrypFlag)){
 					System.out.println("\n===========GENERATING SIGNATURE KEYS===========");
 					clientSignatureManager = new ClientSignature();
 					clientSignatureManager.initializeClientSignature();
-					System.out.println("Signature Keys intialization completed...");
+					System.out.println("Signature keys intialization completed...");
 
 				}
 
@@ -226,12 +233,12 @@ public class Client implements Runnable {
 					ac = new AsymmetricCryptography();
 					clientPrivateKey = ac.getPrivate("./Clientcred/clientRSAprivateKey").getEncoded();
 					serverPublicKey = ac.getPublic("./Clientcred/serverRSApublicKey").getEncoded();
-
+					//Used for sending byte array
 					dOut = new DataOutputStream(socket.getOutputStream());
 					dIn = new DataInputStream(socket.getInputStream());
 				}
 
-				//Initiate conversation
+				//Initiate conversation (threads)
 				if (validConnection){
 					System.out.println("\n===========CHAT INITIATED===========");
 					receiving = new Thread(this);
@@ -248,6 +255,7 @@ public class Client implements Runnable {
 						System.out.println("Command not valid, type 'open session' to start connection with server");
 						request = scanner.nextLine();
 					}
+
 					socket.close();
 					Thread.sleep(1000);
 					System.out.println("Client - END of Main ++++++++++++");  
@@ -263,7 +271,7 @@ public class Client implements Runnable {
 			    e3.printStackTrace();
         	}
 		}
-}
+	}
 
 	public void run() {
 		try {
@@ -271,10 +279,12 @@ public class Client implements Runnable {
 			//Client sending thread              
 			if (Thread.currentThread() == sending) {
 				while (true){
+					//Checks if server thread is still running
 					sending.sleep(500);
 					if (!receiving.isAlive()){
 						break;
 					}
+					// Client send message
 					if (console.ready()){
 						in = console.readLine();
 						if (in.equals("END")){
@@ -289,10 +299,7 @@ public class Client implements Runnable {
 								// System.out.println("serverAfterSign: " + serverAfterSign);
 								byte[] encryptedData = ac.encrypt(serverPublicKey, in.getBytes());
 								dataOut.println(serverAfterSign);
-
 							}
-
-
 							else{
 								dataOut.println("END");
 								break;
@@ -309,8 +316,6 @@ public class Client implements Runnable {
 							// System.out.println("Sending: " + in + ", encrypted message: " + encryptedData);
 							dOut.writeInt(encryptedData.length);
 							dOut.write(encryptedData);
-
-
 						}
 						//(Encryption and Integrity) Client send
 						else if (integFlag && encrypFlag) {
@@ -318,8 +323,6 @@ public class Client implements Runnable {
 							// System.out.println("serverAfterSign: " + serverAfterSign);
 							byte[] encryptedData = ac.encrypt(serverPublicKey, in.getBytes());
 							dataOut.println(serverAfterSign);
-
-
 						}
 						// (No encryption, No integrity) - Client send plaintext
 						else{
@@ -336,7 +339,6 @@ public class Client implements Runnable {
 					if (!sending.isAlive()){
 						break;
 					}
-
 					//(Integrity only)
 					if (!encrypFlag && integFlag){
 						if (dataIn.ready()){
@@ -364,11 +366,13 @@ public class Client implements Runnable {
 					else if (!integFlag && encrypFlag) {
 						int length = dIn.readInt(); 
 						byte[] message = new byte[length];
+						
 						if(length>0) {
 						    dIn.readFully(message, 0, message.length); 
 						}
 						byte[] decryptedData = ac.decrypt(clientPrivateKey, message);
 						String decrypt = new String(decryptedData);
+						
 						if (decrypt.equals("END")){
 							System.out.println("Server has closed the connection.");
 							byte[] encryptedData = ac.encrypt(serverPublicKey, decrypt.getBytes());
@@ -378,7 +382,6 @@ public class Client implements Runnable {
 							break;
 						}
 						System.out.println("(Decrypted message) - Server says: " + decrypt);
-
 					}
 					//(Encryption and Integrity) - Client receive
 					else if (integFlag && encrypFlag){
@@ -408,7 +411,6 @@ public class Client implements Runnable {
 							System.out.println("(Decrypted - Invalid sig.) - Server says: " + mess);
 						}
 					}
-
 					//(No encryption, No integrity) Client recieve plaintext
 					else{
 						if (dataIn.ready()){
@@ -421,9 +423,6 @@ public class Client implements Runnable {
 							System.out.println("Server says: " + out);
 						}
 					}
-
-
-
 				}
 			}
 		}catch (Exception e) {
@@ -431,7 +430,7 @@ public class Client implements Runnable {
 		}
 	}
 
-	 public static void main(String[] args) {
+	public static void main(String[] args) {
 		new Client();
 	}
 }

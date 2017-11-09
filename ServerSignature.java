@@ -1,9 +1,21 @@
+
+//
+// ***************************************************************************************
+// Modified by: Ben Wolfe (V00205547) and Daniel Olaya (V00855054)
+// Course: SENG360 - Security Engineering
+// Date: November, 2017
+// Assignment 3 - Chat program that allows to users to communicate using different 
+// security parameters such as encryption, integrity (digital signatures) and mutual authentication.
+// ***************************************************************************************
+//
+
 import java.io.*;
 import java.security.*;
 import java.security.spec.*;
 import org.bouncycastle.util.encoders.Hex;
 import java.nio.charset.Charset;
 
+//Helper class used to manage client signatures in digital signatures (integrity)
 class ServerSignature {
 
 	// Create a Signature object
